@@ -17,7 +17,14 @@ export default function FileUploader({ onUploadSuccess }: { onUploadSuccess: (id
             const res = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData,
+                credentials: 'include',
             });
+
+            if (res.status === 401) {
+                alert('Unauthorized — please sign in first');
+                window.location.href = '/auth/signin';
+                return;
+            }
 
             if (!res.ok) throw new Error('Upload failed');
 

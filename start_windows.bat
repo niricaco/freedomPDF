@@ -59,10 +59,11 @@ echo [HU] Ha a szerver elindult, a bongeszo automatikusan megnyilik.
 echo [EN] Once the server starts, the browser will open automatically.
 echo.
 
-REM Open browser in background after a slight delay (assuming server takes a few secs)
-start "" cmd /c "timeout /t 10 >nul && start http://localhost:3000"
+REM Open browser after a short delay (avoid nested quoting)
+timeout /t 10 >nul
+start "" "http://localhost:3000"
 
-REM Start the server
-call npm run dev
+REM Start the server (pass --webpack to avoid Turbopack/webpack config conflict)
+call npm run dev -- --webpack
 
 pause

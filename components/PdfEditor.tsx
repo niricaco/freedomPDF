@@ -1,13 +1,12 @@
-'use client';
+"use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/TextLayer.css';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
+import dynamic from 'next/dynamic';
+import PdfViewerClient from './PdfViewerClient';
 import { convertDomToPdfCoordinates } from '@/lib/coordinates';
 
-// Configure worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Load client-only viewer (which imports react-pdf and configures pdfjs)
+const PdfViewer = dynamic(() => Promise.resolve(PdfViewerClient), { ssr: false });
 
 interface PdfEditorProps {
     fileId: string;
@@ -31,6 +30,16 @@ export default function PdfEditor({ fileId }: PdfEditorProps) {
     const [operations, setOperations] = useState<EditOperation[]>([]);
     const [processedFileId, setProcessedFileId] = useState<string | null>(null);
     const [pageDimensions, setPageDimensions] = useState<{ [key: number]: { width: number; height: number } }>({});
+
+    // Configure pdfjs worker on the client when component mounts
+    useEffect(() => {
+        (async () => {
+            const { pdfjs } = await import('react-pdf');
+            pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+        })();
+    }, []);
+
+    const [viewerError, setViewerError] = useState<string | null>(null);
 
     function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
         setNumPages(numPages);
@@ -156,42 +165,47 @@ export default function PdfEditor({ fileId }: PdfEditorProps) {
             </div>
 
             <div className="flex-grow overflow-auto bg-gray-500 p-8 flex justify-center">
-                <Document
-                    file={`/api/file/${fileId}`}
-                    onLoadSuccess={onDocumentLoadSuccess}
-                    className="flex flex-col gap-4"
-                >
-                    {Array.from(new Array(numPages), (el, index) => (
-                        <div key={`page_${index + 1}`} className="relative border shadow-lg bg-white">
-                             <Page
-                                pageNumber={index + 1}
-                                scale={scale}
-                                onLoadSuccess={(page) => onPageLoadSuccess(index, page)}
-                                onClick={(e) => handlePageClick(e, index)}
-                            />
-                            {operations.filter(op => op.pageIndex === index).map((op, i) => (
-                                <div
-                                    key={i}
-                                    style={{
-                                        position: 'absolute',
-                                        left: op.x,
-                                        top: op.y,
-                                        width: op.width,
-                                        height: op.height,
-                                        border: op.type === 'whiteout' ? '1px solid red' : 'none',
-                                        backgroundColor: op.type === 'whiteout' ? 'rgba(255, 255, 255, 0.8)' : 'transparent',
-                                        pointerEvents: 'none',
-                                        color: 'black',
-                                        fontSize: '12px',
-                                        whiteSpace: 'nowrap'
-                                    }}
-                                >
-                                    {op.type === 'text' && op.text}
-                                </div>
-                            ))}
-                        </div>
-                    ))}
-                </Document>
+                {viewerError ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                        <div className="mb-4 text-sm text-gray-700">PDF viewer error: {viewerError}</div>
+                        <div className="mb-2 text-sm">Falling back to browser PDF embed (read-only).</div>
+                        <iframe src={`/api/file/${fileId}`} className="w-full h-[80vh] border" />
+                    </div>
+                ) : (
+                    <PdfViewer
+                        file={`/api/file/${fileId}`}
+                        scale={scale}
+                        onDocumentLoadSuccess={onDocumentLoadSuccess}
+                        onPageLoadSuccess={onPageLoadSuccess}
+                        handlePageClick={handlePageClick}
+                        onError={(msg: string) => setViewerError(msg)}
+                    />
+                )}
+                {/* Render overlays */}
+                {Array.from(new Array(numPages), (el, index) => (
+                    <div key={`overlay_${index}`} className="relative -mt-[calc(100%)] pointer-events-none">
+                        {operations.filter(op => op.pageIndex === index).map((op, i) => (
+                            <div
+                                key={i}
+                                style={{
+                                    position: 'absolute',
+                                    left: op.x,
+                                    top: op.y,
+                                    width: op.width,
+                                    height: op.height,
+                                    border: op.type === 'whiteout' ? '1px solid red' : 'none',
+                                    backgroundColor: op.type === 'whiteout' ? 'rgba(255, 255, 255, 0.8)' : 'transparent',
+                                    pointerEvents: 'none',
+                                    color: 'black',
+                                    fontSize: '12px',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {op.type === 'text' && op.text}
+                            </div>
+                        ))}
+                    </div>
+                ))}
             </div>
         </div>
     );
